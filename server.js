@@ -71,14 +71,13 @@ async function flushAll() {
 }
 
 async function initMongo() {
-  if (!MONGO_URL) { console.log('⚠️ Không có MONGO_URL — chỉ lưu file local (Render sẽ mất data khi redeploy)'); return; }
+  if (!MONGO_URL) { console.log('⚠️ Không có MONGO_URL — chỉ lưu file local'); return; }
   const { MongoClient } = require('mongodb');
   const mc = new MongoClient(MONGO_URL, { serverSelectionTimeoutMS: 15000 });
   await mc.connect();
   const mdb = mc.db(E.MONGO_DB || 'nongtrai');
   usersCol = mdb.collection('users'); sessCol = mdb.collection('sessions'); metaCol = mdb.collection('meta');
   console.log('✅ Đã kết nối MongoDB Atlas');
-  // LOAD TRƯỚC khi cho phép ghi, để không đè dữ liệu cũ bằng bản local cũ
   const all = await usersCol.find({}).toArray();
   all.forEach(d => { const u = strip(d); db.users[u.sub] = u; index(u); });
   const ss = await sessCol.find({}).toArray();
@@ -91,14 +90,14 @@ process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);
 
 // ====== TIỆN ÍCH ======
 const clean = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, n);
-const today = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // giờ VN
+const today = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 const newCode = () => { for (;;) { const c = crypto.randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); if (!byCode[c]) return c; } };
 const isOwnerIdentity = (email, discordId) =>
   (email && OWNER_EMAILS.includes(String(email).toLowerCase())) || (discordId && OWNER_DISCORD.includes(discordId));
 
 function getOrCreate(sub, email, name, discordId) {
   let u = db.users[sub];
-  if (!u && email) u = Object.values(db.users).find(x => x.email && x.email === email); // cùng email = cùng tài khoản
+  if (!u && email) u = Object.values(db.users).find(x => x.email && x.email === email);
   if (!u && discordId) u = byDiscord[discordId];
   if (!u) {
     u = db.users[sub] = {
@@ -123,7 +122,7 @@ function newSession(u) {
   return token;
 }
 
-const conns = new Map(); // code -> {ws,u,lv}
+const conns = new Map();
 const sendWs = (ws, o) => { try { if (ws.readyState === 1) ws.send(JSON.stringify(o)); } catch (e) { /* bỏ */ } };
 const sendTo = (code, o) => { const c = conns.get(code); if (c) sendWs(c.ws, o); };
 const bcast = (o, except) => { for (const [code, c] of conns) if (code !== except) sendWs(c.ws, o); };
@@ -219,13 +218,13 @@ function checkinByCode(code, discordId) {
   const coins = 80 + ((u.save && u.save.lv) || 1) * 12;
   addPending(u, { title: 'Điểm danh 🎁', body: 'Xu + giày điểm danh!', gift: { coins, shoes: { s_checkin: 1 } }, auto: true });
   br('checkin', u, `điểm danh nhận ${coins} xu` + (discordId ? ' (qua Discord)' : ''));
-  return { ok: true, msg: `Điểm danh thành công cho ${u.name}: +${coins} xu + giày. Quà vào hòm thư trong game.` };
+  return { ok: true, msg: `Điểm danh thành công cho ${u.name}: +${coins} xu + giày.` };
 }
 
 function linkDiscord(code, discordId) {
   const u = byCode[String(code || '').trim().toUpperCase()];
   if (!u) return null;
-  if (u.discordId && u.discordId !== discordId) return null; // đã liên kết người khác
+  if (u.discordId && u.discordId !== discordId) return null;
   u.discordId = discordId; byDiscord[discordId] = u; markU(u);
   if (OWNER_DISCORD.includes(discordId) && u.role !== 'owner') { u.role = 'owner'; sendTo(u.code, { t: 'role', role: 'owner', title: u.title || '' }); }
   return u;
@@ -251,7 +250,6 @@ app.get('/config.js', (req, res) => {
   res.type('js').set('Cache-Control', 'no-store').send('window.CFG=' + JSON.stringify(cfg) + ';');
 });
 
-// --- Đăng nhập Discord (OAuth2) ---
 const dcRedirect = req => {
   const r = E.DISCORD_REDIRECT_URI || '';
   if (r && !/localhost|127\.0\.0\.1/.test(r)) return r;
@@ -281,7 +279,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
   } catch (e) { console.error('Discord login lỗi:', e.message); res.redirect('/?err=discord'); }
 });
 
-// --- Đăng nhập Google (nút GIS gửi credential) / thử nghiệm ---
 app.post('/api/login', async (req, res) => {
   try {
     const { credential, dev } = req.body || {};
@@ -316,7 +313,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 * 1024 });
 
-// ====== WEBSOCKET ======
 wss.on('connection', (ws, req) => {
   const token = new URL(req.url, 'http://x').searchParams.get('token') || '';
   const u = sessionUser(token);
@@ -405,7 +401,7 @@ wss.on('connection', (ws, req) => {
   ws.on('error', () => {});
 });
 
-// ====== KHỞI ĐỘNG: Mongo -> Discord bot -> listen ======
+// ====== CTX CHO DISCORD BOT ======
 const ctx = {
   DATA, adminDo, checkinByCode, linkDiscord,
   roleOfDiscord: id => (OWNER_DISCORD.includes(id) ? 'owner' : (byDiscord[id] ? byDiscord[id].role : 'player')),
@@ -423,21 +419,33 @@ const ctx = {
   privileged: { members: true, content: true }
 };
 
+// ====== PREFLIGHT VỚI TIMEOUT 5 GIÂY ======
 async function discordPreflight() {
-  // Kiểm tra Developer Portal đã bật Privileged Intents chưa — nếu chưa bật mà xin intent đó thì bot KHÔNG đăng nhập được
   try {
-    const r = await fetch('https://discord.com/api/v10/applications/@me', { headers: { Authorization: 'Bot ' + E.DISCORD_TOKEN } });
-    if (r.status === 401) { console.error('❌ DISCORD_TOKEN SAI/ĐÃ BỊ RESET — vào Developer Portal > Bot > Reset Token, dán token mới vào Render Environment'); return false; }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch('https://discord.com/api/v10/applications/@me', {
+      headers: { Authorization: 'Bot ' + E.DISCORD_TOKEN },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (r.status === 401) {
+      console.error('❌ DISCORD_TOKEN SAI/ĐÃ BỊ RESET — vào Developer Portal > Bot > Reset Token, dán token mới vào Render Environment');
+      return true; // Vẫn cho bot thử login
+    }
     const a = await r.json();
     const f = a.flags || 0;
-    ctx.privileged.members = !!(f & (1 << 14) || f & (1 << 15));
-    ctx.privileged.content = !!(f & (1 << 18) || f & (1 << 19));
-    if (!ctx.privileged.members) console.warn('⚠️ Chưa bật SERVER MEMBERS INTENT trong Developer Portal > Bot → tạm tắt (tự gán role thành viên mới sẽ không chạy)');
-    if (!ctx.privileged.content) console.warn('⚠️ Chưa bật MESSAGE CONTENT INTENT trong Developer Portal > Bot → tạm tắt (cầu nối chat Discord→game sẽ không chạy)');
-  } catch (e) { console.warn('Preflight Discord lỗi (bỏ qua):', e.message); }
+    ctx.privileged.members = !!((f & (1 << 14)) || (f & (1 << 15)));
+    ctx.privileged.content = !!((f & (1 << 18)) || (f & (1 << 19)));
+    if (!ctx.privileged.members) console.warn('⚠️ Chưa bật SERVER MEMBERS INTENT trong Developer Portal > Bot');
+    if (!ctx.privileged.content) console.warn('⚠️ Chưa bật MESSAGE CONTENT INTENT trong Developer Portal > Bot');
+  } catch (e) {
+    console.warn('Preflight Discord lỗi (bỏ qua):', e.message);
+  }
   return true;
 }
 
+// ====== KHỞI ĐỘNG ======
 (async () => {
   try { await initMongo(); } catch (e) { console.error('❌ Lỗi MongoDB:', e.message); }
   if (metaCol) { try { const d = await metaCol.findOne({ _id: 'discord-setup' }); if (d) ctx.initialSetup = d.value; } catch (e) { /* */ } }
@@ -446,12 +454,18 @@ async function discordPreflight() {
 
   if (E.DISCORD_TOKEN) {
     console.log('🔑 DISCORD_TOKEN: CÓ (' + E.DISCORD_TOKEN.length + ' ký tự)');
-    if (await discordPreflight()) {
-      try { require('./discord')(ctx); } catch (e) { console.error('❌ Lỗi khởi động bot Discord:', e.stack || e.message); }
+    await discordPreflight();
+    console.log('🚀 Đang khởi động bot Discord...');
+    try {
+      require('./discord')(ctx);
+      console.log('✅ Đã gọi module discord.js');
+    } catch (e) {
+      console.error('❌ Lỗi khởi động bot Discord:', e.stack || e.message);
     }
-  } else console.warn('⚠️ Không có DISCORD_TOKEN — bot Discord tắt');
+  } else {
+    console.warn('⚠️ Không có DISCORD_TOKEN — bot Discord tắt');
+  }
 
-  // Render gói free ngủ sau 15 phút không có truy cập → bot Discord cũng "không phản hồi". Tự ping để giữ thức.
   const self = BASE_URL;
   if (self) setInterval(() => fetch(self + '/healthz').catch(() => {}), 9 * 60e3);
 })();
