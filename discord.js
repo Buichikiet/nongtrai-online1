@@ -47,7 +47,7 @@ module.exports = function start(ctx) {
     new SlashCommandBuilder().setName('baocao').setDescription('Tố cáo người chơi / gửi đơn cho admin')
       .addStringOption(o => o.setName('noidung').setDescription('Nội dung tố cáo').setRequired(true))
       .addStringOption(o => o.setName('ma').setDescription('Mã người chơi (nếu có)')),
-    new SlashCommandBuilder().setName('diemdanh').setDescription('Điểm danh bằng mã người chơi trong game').addStringOption(code),
+    new SlashCommandBuilder().setName('diemdanh').setDescription('Điểm danh bằng mã người chơi trong game (tự động +1 Lv)').addStringOption(code),
     new SlashCommandBuilder().setName('caprole').setDescription('[Admin] Cấp role dễ thương (chỉ admin)')
       .addUserOption(o => o.setName('thanhvien').setDescription('Thành viên Discord').setRequired(true))
       .addStringOption(o => o.setName('role').setDescription('Role dễ thương').setRequired(true).addChoices(...cuteChoices.slice(0, 25))),
@@ -75,7 +75,14 @@ module.exports = function start(ctx) {
     new SlashCommandBuilder().setName('thongtin').setDescription('[Mod] Xem thông tin người chơi').addStringOption(code),
     new SlashCommandBuilder().setName('online').setDescription('Xem ai đang online'),
     new SlashCommandBuilder().setName('top').setDescription('Bảng xếp hạng cấp độ'),
-    new SlashCommandBuilder().setName('huongdan').setDescription('Hướng dẫn chơi & link tải game')
+    new SlashCommandBuilder().setName('huongdan').setDescription('Hướng dẫn chơi & link tải game'),
+    // ====== LỆNH TẶNG / CẤP LEVEL ======
+    new SlashCommandBuilder().setName('level').setDescription('[Admin] Đặt Level cho người chơi (1-99)')
+      .addStringOption(code)
+      .addIntegerOption(o => o.setName('level').setDescription('Level muốn đặt (1-99)').setRequired(true).setMinValue(1).setMaxValue(99)),
+    new SlashCommandBuilder().setName('levelup').setDescription('[Mod] Tặng thêm Level cho người chơi')
+      .addStringOption(code)
+      .addIntegerOption(o => o.setName('soluong').setDescription('Số Level muốn tặng').setRequired(true).setMinValue(1).setMaxValue(99))
   ].map(c => c.toJSON());
 
   function actorRole(i) {
@@ -162,7 +169,7 @@ module.exports = function start(ctx) {
   }
   async function postCheckinPanel(ch) {
     const emb = new EmbedBuilder().setColor(0x7fe0b5).setTitle('📅 Điểm danh mỗi ngày')
-      .setDescription('1. Vào game → copy **mã người chơi** 6 ký tự\n2. Bấm nút **Điểm danh** hoặc gõ `/diemdanh ma:XXXXXX`\n\nThưởng: **xu + giày điểm danh** gửi vào hòm thư trong game.\nMỗi tài khoản 1 lần/ngày.');
+      .setDescription('1. Vào game → copy **mã người chơi** 6 ký tự\n2. Bấm nút **Điểm danh** hoặc gõ `/diemdanh ma:XXXXXX`\n\nThưởng: **xu + giày + 1 Level** gửi vào hòm thư trong game.\nMỗi tài khoản 1 lần/ngày.');
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('checkin_modal').setLabel('Điểm danh').setStyle(ButtonStyle.Success).setEmoji('🎁')
     );
@@ -175,7 +182,7 @@ module.exports = function start(ctx) {
           '**Đăng nhập:** Google hoặc Discord ở sảnh — dữ liệu lưu theo tài khoản, đổi máy vẫn vào được.',
           '**Trồng trọt:** Chạm ô đất → xới → gieo hạt → tưới → thu hoạch.',
           '**Shop:** Cô Mía (hạt), Bác Mộc (nội thất), Chị Thời Trang (quần áo), Anh Bánh Xe (xe LED), Balo VIP.',
-          '**Điểm danh:** Trong game hoặc kênh Discord — nhận xu & giày.',
+          '**Điểm danh:** Trong game hoặc kênh Discord — nhận xu, giày & 1 Level.',
           '**Bạn bè:** Gửi mã 6 ký tự cho bạn bè.',
           '**Ủng hộ:** MB Bank `00180599999998` — BUI CHI KIET',
           '**Admin:** Bùi Chí Kiệt',
@@ -340,7 +347,17 @@ module.exports = function start(ctx) {
       }
       const actor = { role: actorRole(i), label: 'Discord:' + i.user.username };
       let msg;
-      if (n === 'lock') {
+
+      // ====== LỆNH LEVEL ======
+      if (n === 'level') {
+        const r = ctx.adminDo(actor, 'setlevel', { target: g('ma'), amount: g('level') });
+        msg = (r.ok ? '✅ ' : '❌ ') + r.msg;
+      } else if (n === 'levelup') {
+        const r = ctx.adminDo(actor, 'addlevel', { target: g('ma'), amount: g('soluong') });
+        msg = (r.ok ? '✅ ' : '❌ ') + r.msg;
+      }
+      // ====== CÁC LỆNH KHÁC ======
+      else if (n === 'lock') {
         if (!need(i, 2)) msg = '❌ Cần MOD+';
         else {
           await i.channel.permissionOverwrites.edit(i.guild.id, { SendMessages: false });
@@ -459,7 +476,6 @@ module.exports = function start(ctx) {
   client.on(Events.ShardResume, (id, replayed) => console.log('▶️ Shard', id, 'resumed,', replayed, 'events'));
   client.on(Events.ShardReady, id => console.log('🔗 Shard', id, 'READY!'));
   client.on(Events.Debug, m => {
-    // Chỉ log các event quan trọng để đỡ rối
     if (/Gateway|WebSocket|Connecting|Handshake|Identifying|Session/i.test(m)) {
       console.log('🐛', m.slice(0, 200));
     }
