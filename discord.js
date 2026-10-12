@@ -260,9 +260,12 @@ module.exports = function start(ctx) {
   // ====== SỰ KIỆN ======
   client.once(Events.ClientReady, async c => {
     console.log('════════════════════════════════════════');
-    console.log('🤖 Bot Discord đã online:', c.user.tag);
+    console.log('⭐⭐⭐⭐⭐ BOT DISCORD ĐÃ ONLINE ⭐⭐⭐⭐⭐');
+    console.log('🤖 Tag:', c.user.tag);
+    console.log('🆔 Bot ID:', c.user.id);
     console.log('📋 Số guild:', c.guilds.cache.size);
     console.log('📋 Guild IDs:', c.guilds.cache.map(g => g.id).join(', '));
+    console.log('👥 Tổng user:', c.users.cache.size);
     console.log('════════════════════════════════════════');
     try {
       const rest = new REST({ version: '10' }).setToken(E.DISCORD_TOKEN);
@@ -284,7 +287,6 @@ module.exports = function start(ctx) {
   client.on(Events.InteractionCreate, async i => {
     console.log('📥 Interaction:', i.type, i.commandName || i.customId || 'unknown', '| user:', i.user?.username, '| guild:', i.guild?.name);
     try {
-      // Defer reply NGAY để tránh timeout 3s
       if (!i.isButton() && !i.isModalSubmit() && !i.deferred && !i.replied && i.isChatInputCommand()) {
         try { await i.deferReply({ ephemeral: true }); } catch (e) { /* bỏ */ }
       }
@@ -448,26 +450,48 @@ module.exports = function start(ctx) {
   });
   ctx.getSetup = () => setup;
 
-  // ====== LOGIN BOT ======
+  // ====== LOG DEBUG SHARD / WEBSOCKET ======
   client.on(Events.Error, e => console.error('🤖 Discord client error:', e.message));
   client.on(Events.Warn, w => console.warn('🤖 Discord warn:', w));
   client.on(Events.ShardError, e => console.error('🤖 Discord shard error:', e.message));
   client.on(Events.ShardDisconnect, (ev, id) => console.warn('🤖 Shard', id, 'mất kết nối, code', ev && ev.code));
+  client.on(Events.ShardReconnecting, id => console.log('🔄 Shard', id, 'đang kết nối lại...'));
+  client.on(Events.ShardResume, (id, replayed) => console.log('▶️ Shard', id, 'resumed,', replayed, 'events'));
+  client.on(Events.ShardReady, id => console.log('🔗 Shard', id, 'READY!'));
+  client.on(Events.Debug, m => {
+    // Chỉ log các event quan trọng để đỡ rối
+    if (/Gateway|WebSocket|Connecting|Handshake|Identifying|Session/i.test(m)) {
+      console.log('🐛', m.slice(0, 200));
+    }
+  });
 
   console.log('════════════════════════════════════════');
   console.log('🤖 Đang đăng nhập bot Discord...');
   console.log('🔑 Token dài:', E.DISCORD_TOKEN ? E.DISCORD_TOKEN.length : 0, 'ký tự');
+  console.log('📡 Intents:', client.options.intents.toArray().join(', '));
   console.log('════════════════════════════════════════');
 
-  client.login(E.DISCORD_TOKEN)
-    .then(() => console.log('✅ Bot Discord login thành công!'))
-    .catch(e => {
-      console.error('❌ Bot Discord KHÔNG đăng nhập được:', e.message);
-      if (e.message.includes('disallowed intents')) {
-        console.error('👉 Bật Message Content Intent + Server Members Intent tại https://discord.com/developers/applications');
-      }
-      if (e.message.includes('TokenInvalid')) {
-        console.error('👉 Token sai — Reset Token trong Developer Portal → Bot');
-      }
-    });
+  // ====== LOGIN VỚI AUTO-RETRY ======
+  let retry = 0;
+  function tryLogin() {
+    client.login(E.DISCORD_TOKEN)
+      .then(() => console.log('✅ client.login() resolved! Bot Discord đang chạy.'))
+      .catch(e => {
+        console.error('❌ Bot Discord KHÔNG đăng nhập được:', e.message);
+        if (e.message.includes('disallowed intents')) {
+          console.error('👉 Bật Message Content Intent + Server Members Intent tại https://discord.com/developers/applications');
+        }
+        if (e.message.includes('TokenInvalid')) {
+          console.error('👉 Token sai — Reset Token trong Developer Portal → Bot');
+        }
+        retry++;
+        if (retry < 3) {
+          console.log(`🔁 Thử lại login lần ${retry}/3 sau 5 giây...`);
+          setTimeout(tryLogin, 5000);
+        } else {
+          console.error('❌ Đã thử login 3 lần, bỏ cuộc.');
+        }
+      });
+  }
+  tryLogin();
 };
