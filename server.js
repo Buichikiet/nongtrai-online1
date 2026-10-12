@@ -145,7 +145,27 @@ function addPending(u, item) {
 }
 
 const GROUP = { seed: 'seeds', crop: 'crops', furn: 'furn', good: 'goods', cloth: 'clothes', shoe: 'shoes', bag: 'bags' };
-const PERM = { info: 2, mute: 2, kick: 2, coins: 3, item: 3, mail: 3, ban: 3, unban: 3, announce: 3, settitle: 3, setrole: 4 };
+const PERM = {
+  info: 2, mute: 2, kick: 2,
+  coins: 3, item: 3, mail: 3, ban: 3, unban: 3, announce: 3, settitle: 3,
+  setlevel: 3, addlevel: 3,
+  setrole: 4
+};
+
+// Hàm đảm bảo save object có đủ field
+function ensureSave(u) {
+  if (!u.save) u.save = {
+    coins: 0, lv: 1, xp: 0, map: 1,
+    inv: { seeds: { carrot: 8 }, crops: {}, goods: {}, furn: {}, clothes: [], shoes: [], bags: [] },
+    sel: 'carrot', houseLv: 0, veh: 0, vehOwned: [0], pet: -1, petOwned: [],
+    maps: {}, friends: [], mail: [], lastDaily: '', led: true,
+    settings: { music: 0.5, sfx: 0.7 }
+  };
+  if (!u.save.inv) u.save.inv = { seeds:{carrot:8}, crops:{}, goods:{}, furn:{}, clothes:[], shoes:[], bags:[] };
+  if (!u.save.lv) u.save.lv = 1;
+  if (typeof u.save.xp !== 'number') u.save.xp = 0;
+  return u.save;
+}
 
 function adminDo(actor, cmd, a) {
   a = a || {};
@@ -166,34 +186,62 @@ function adminDo(actor, cmd, a) {
     return { ok: false, msg: 'Không thể tác động lên người cùng/cao quyền hơn' };
   switch (cmd) {
     case 'info':
-      return { ok: true, msg: `${u.name} [${u.code}] role=${u.role} Lv.${(u.save && u.save.lv) || 1} xu=${(u.save && u.save.coins) || 0} ${conns.has(u.code) ? '🟢 online' : '⚪ offline'}${u.banned ? ' ⛔ bị khóa' : ''}` };
+      ensureSave(u);
+      return { ok: true, msg: `${u.name} [${u.code}] role=${u.role} Lv.${u.save.lv} xu=${u.save.coins} ${conns.has(u.code) ? '🟢 online' : '⚪ offline'}${u.banned ? ' ⛔ bị khóa' : ''}` };
+
     case 'coins':
       if (!amount) return { ok: false, msg: 'Số xu phải khác 0' };
       addPending(u, { title: amount > 0 ? 'Quà xu từ Admin 🪙' : 'Điều chỉnh xu', body: `${actor.label || 'Admin'}: ${amount > 0 ? '+' : ''}${amount} xu`, gift: { coins: amount }, auto: true });
       return { ok: true, msg: `Đã ${amount > 0 ? 'cộng' : 'trừ'} ${Math.abs(amount)} xu cho ${u.name}` };
+
     case 'item': {
       const [g, id] = String(a.item || '').split(':');
       if (!GROUP[g] || !/^[a-z0-9_]{1,24}$/i.test(id || '') || amount <= 0) return { ok: false, msg: 'Vật phẩm/số lượng không hợp lệ' };
       addPending(u, { title: 'Quà vật phẩm 🎁', body: `${actor.label || 'Admin'} tặng bạn ${amount} × ${id}`, gift: { [GROUP[g]]: { [id]: amount } }, auto: true });
       return { ok: true, msg: `Đã tặng ${amount} ${id} cho ${u.name}` };
     }
+
     case 'mail': {
       const gift = {}; if (amount) gift.coins = amount;
       addPending(u, { title: clean(a.title, 60) || 'Thư từ Admin', body: clean(a.text, 200), gift: amount ? gift : null, from: 'Admin' });
       return { ok: true, msg: 'Đã gửi thư cho ' + u.name };
     }
+
     case 'setrole': {
       const r = String(a.role || '');
       if (!(r in LV)) return { ok: false, msg: 'Role không hợp lệ' };
       u.role = r; markU(u); sendTo(u.code, { t: 'role', role: r, title: u.title || '' });
       return { ok: true, msg: `Đã đặt role ${r} cho ${u.name}` };
     }
+
     case 'settitle': {
       const t = String(a.title || '');
       if (t && !CUTE_TITLES[t]) return { ok: false, msg: 'Danh hiệu không hợp lệ' };
       u.title = t; markU(u); sendTo(u.code, { t: 'role', role: u.role, title: t });
       return { ok: true, msg: t ? `Đã cấp danh hiệu ${CUTE_TITLES[t].n} cho ${u.name}` : 'Đã gỡ danh hiệu của ' + u.name };
     }
+
+    // ====== CẤP / TẶNG LEVEL ======
+    case 'setlevel': {
+      ensureSave(u);
+      const lv = Math.max(1, Math.min(99, Math.trunc(+a.amount) || 1));
+      u.save.lv = lv;
+      u.save.xp = 0;
+      markU(u);
+      sendTo(u.code, { t: 'update_level', lv });
+      return { ok: true, msg: `Đã đặt Level ${lv} cho ${u.name}` };
+    }
+    case 'addlevel': {
+      ensureSave(u);
+      const add = Math.trunc(+a.amount) || 1;
+      const newLv = Math.max(1, Math.min(99, u.save.lv + add));
+      u.save.lv = newLv;
+      u.save.xp = 0;
+      markU(u);
+      sendTo(u.code, { t: 'update_level', lv: newLv });
+      return { ok: true, msg: `Đã tặng ${add} Level cho ${u.name} (giờ là Lv.${newLv})` };
+    }
+
     case 'kick':
       sendTo(u.code, { t: 'kick', reason: 'Bạn đã bị đưa ra khỏi game bởi admin' });
       { const c = conns.get(u.code); if (c) setTimeout(() => c.ws.close(4003), 300); }
@@ -209,16 +257,22 @@ function adminDo(actor, cmd, a) {
   return { ok: false, msg: 'Lệnh không hỗ trợ' };
 }
 
+// Điểm danh tự động cộng 1 level
 function checkinByCode(code, discordId) {
   const u = byCode[String(code || '').trim().toUpperCase()];
   if (!u) return { ok: false, msg: 'Mã không đúng. Vào game bấm 📅 để xem mã 6 ký tự.' };
   if (u.banned) return { ok: false, msg: 'Tài khoản đang bị khóa.' };
   if (u.lastCheckin === today()) return { ok: false, msg: `${u.name} hôm nay đã điểm danh rồi.` };
   u.lastCheckin = today();
-  const coins = 80 + ((u.save && u.save.lv) || 1) * 12;
-  addPending(u, { title: 'Điểm danh 🎁', body: 'Xu + giày điểm danh!', gift: { coins, shoes: { s_checkin: 1 } }, auto: true });
-  br('checkin', u, `điểm danh nhận ${coins} xu` + (discordId ? ' (qua Discord)' : ''));
-  return { ok: true, msg: `Điểm danh thành công cho ${u.name}: +${coins} xu + giày.` };
+  ensureSave(u);
+  const coins = 80 + u.save.lv * 12;
+  // Cộng 1 level mỗi lần điểm danh
+  u.save.lv = Math.min(99, u.save.lv + 1);
+  u.save.xp = 0;
+  sendTo(u.code, { t: 'update_level', lv: u.save.lv });
+  addPending(u, { title: 'Điểm danh 🎁', body: 'Xu + giày + 1 Level!', gift: { coins, shoes: { s_checkin: 1 } }, auto: true });
+  br('checkin', u, `điểm danh nhận ${coins} xu + 1 Level` + (discordId ? ' (qua Discord)' : ''));
+  return { ok: true, msg: `Điểm danh thành công cho ${u.name}: +${coins} xu + giày + 1 Level (giờ Lv.${u.save.lv}).` };
 }
 
 function linkDiscord(code, discordId) {
