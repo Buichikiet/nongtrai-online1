@@ -430,15 +430,15 @@ async function discordPreflight() {
     });
     clearTimeout(timeout);
     if (r.status === 401) {
-      console.error('❌ DISCORD_TOKEN SAI/ĐÃ BỊ RESET — vào Developer Portal > Bot > Reset Token, dán token mới vào Render Environment');
-      return true; // Vẫn cho bot thử login
+      console.error('❌ DISCORD_TOKEN SAI/ĐÃ BỊ RESET — vào Developer Portal > Bot > Reset Token');
+      return true;
     }
     const a = await r.json();
     const f = a.flags || 0;
     ctx.privileged.members = !!((f & (1 << 14)) || (f & (1 << 15)));
     ctx.privileged.content = !!((f & (1 << 18)) || (f & (1 << 19)));
-    if (!ctx.privileged.members) console.warn('⚠️ Chưa bật SERVER MEMBERS INTENT trong Developer Portal > Bot');
-    if (!ctx.privileged.content) console.warn('⚠️ Chưa bật MESSAGE CONTENT INTENT trong Developer Portal > Bot');
+    if (!ctx.privileged.members) console.warn('⚠️ Chưa bật SERVER MEMBERS INTENT');
+    if (!ctx.privileged.content) console.warn('⚠️ Chưa bật MESSAGE CONTENT INTENT');
   } catch (e) {
     console.warn('Preflight Discord lỗi (bỏ qua):', e.message);
   }
