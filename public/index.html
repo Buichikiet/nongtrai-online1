@@ -315,6 +315,8 @@ srv(m){switch(m.t){
  case'role':ROLE=m.role;if(m.title!=null)TITLE=m.title;hudUpdate();toast('Vai trò: '+(ROLES[m.role]?ROLES[m.role].t:'Người chơi')+(TITLE?' • '+tTag(TITLE):''));break;
  case'announce':toast('📢 '+m.text);addChat('Thông báo',m.text,false,0,'owner',true);break;
  case'adm_res':toast(m.msg);if(curPanel===openFriends)openFriends();break;
+ case'update_coins':if(S){S.coins=m.coins;if(m.delta)toast('💰 '+(m.delta>0?'+':'')+m.delta+' xu!');hudUpdate();}break;
+ case'update_level':if(S){S.lv=m.lv;S.xp=0;toast('⬆️ Level của bạn đã được đổi thành '+m.lv+'!');hudUpdate();save();}break;
  case'link_code':panel('🎮 Mã thành viên / Discord','<p>Copy mã rồi điểm danh <b>/diemdanh</b> hoặc <b>/lienket</b> trên Discord.</p><div class="row"><div class="t"><b style="font-size:22px">'+m.code+'</b><small>Server: '+(CFG.invite||'https://discord.gg/TZRfuhbqJA')+'</small></div>'+bt('Copy',"navigator.clipboard.writeText('"+m.code+"');toast('Đã copy')",'mint')+'</div>');break;
  case'kick':this.online=false;alert(m.reason||'Bạn đã bị đưa ra khỏi game');logout();break;
 }}};
@@ -500,11 +502,11 @@ function openDonateLobby(){openDonate()}
 function openCheckin(){
  const today=new Date().toISOString().slice(0,10);
  const done=AUTH.user&&AUTH.user.lastCheckin===today||S.lastDaily===today;
- panel('📅 Điểm danh',`<p>Điểm danh mỗi ngày nhận <b>xu + giày điểm danh</b>. Copy mã rồi điểm danh trên Discord cũng được.</p>
+ panel('📅 Điểm danh',`<p>Điểm danh mỗi ngày nhận <b>xu + giày điểm danh + 1 Level</b>. Copy mã rồi điểm danh trên Discord cũng được.</p>
  <div class="row"><div class="t">Mã của bạn <b style="font-size:20px">${S.id}</b></div>${bt('Copy',"copyCode()",'mint')}</div>
  ${bt(done?'Hôm nay đã điểm danh':'🎁 Điểm danh ngay',done?'':'doCheckin()','pink')}
  ${bt('Mở Discord điểm danh',"window.open((CFG.invite||'https://discord.gg/TZRfuhbqJA'),'_blank')",'disc')}`)}
-async function doCheckin(){if(NET.online){NET.send({t:'checkin'});if(AUTH.user)AUTH.user.lastCheckin=new Date().toISOString().slice(0,10);closePanel();return}const today=new Date().toISOString().slice(0,10);if(S.lastDaily===today)return toast('Hôm nay đã điểm danh');S.lastDaily=today;addMail('Hệ thống','Điểm danh 🎁','Xu + giày điểm danh!',{coins:80+S.lv*12,shoes:{s_checkin:1}});toast('Điểm danh thành công!');closePanel();hudUpdate();save()}
+async function doCheckin(){if(NET.online){NET.send({t:'checkin'});if(AUTH.user)AUTH.user.lastCheckin=new Date().toISOString().slice(0,10);closePanel();return}const today=new Date().toISOString().slice(0,10);if(S.lastDaily===today)return toast('Hôm nay đã điểm danh');S.lastDaily=today;S.lv=Math.min(99,S.lv+1);addMail('Hệ thống','Điểm danh 🎁','Xu + giày + 1 Level!',{coins:80+S.lv*12,shoes:{s_checkin:1}});toast('Điểm danh thành công!');closePanel();hudUpdate();save()}
 function copyCode(){const c=(AUTH.user&&AUTH.user.code)||(S&&S.id)||'';if(!c)return toast('Chưa có mã — hãy đăng nhập');navigator.clipboard.writeText(c).then(()=>toast('Đã copy mã '+c)).catch(()=>prompt('Copy mã:',c))}
 function openMail(){panel('✉️ Hòm thư',S.mail.map((m,i)=>`<div class="row"><div class="e">${m.gift?'🎁':'✉️'}</div><div class="t"><b>${m.title}</b><small>Từ: ${m.from}</small><small>${m.body}</small></div>${m.gift&&!m.claimed?bt('Nhận',`claimMail(${i})`,'pink'):''}</div>`).join('')||'<p>Chưa có thư 📭</p>',openMail)}
 function claimMail(i){const m=S.mail[i];if(!m||m.claimed)return;const g=m.gift||{};if(g.coins)S.coins=Math.max(0,S.coins+g.coins);for(const grp of['seeds','crops','goods','furn','clothes','shoes','bags']){if(g[grp])for(const k in g[grp]){S.inv[grp]=S.inv[grp]||{};S.inv[grp][k]=(S.inv[grp][k]||0)+g[grp][k]}}m.claimed=true;AU.sfx('coin');refresh()}
@@ -878,13 +880,14 @@ function openAdmin(){
  const opts=CROPS.map(c=>`<option value="seed:${c.id}">Hạt ${c.n}</option>`).join('')+CROPS.map(c=>`<option value="crop:${c.id}">${c.n} (nông sản)</option>`).join('')+FURN.map(f=>`<option value="furn:${f.id}">${f.e} ${f.n}</option>`).join('')+GOODS.map(g=>`<option value="good:${g.id}">${g.e} ${g.n}</option>`).join('')+CLOTH.map(f=>`<option value="cloth:${f.id}">${f.e} ${f.n}</option>`).join('')+SHOE.map(f=>`<option value="shoe:${f.id}">${f.e} ${f.n}</option>`).join('')+BAGS.map(f=>`<option value="bag:${f.id}">${f.e} ${f.n}</option>`).join('');
  panel('🛡️ Bảng quản trị – '+ROLES[ROLE].t,`
  <div class="row"><div class="t">Mã người chơi<input type="text" id="at" placeholder="VD: A1B2C3" maxlength="8" style="text-align:left;text-transform:uppercase"></div></div>
- <div class="row"><div class="t">Số lượng (xu / vật phẩm / phút)<input type="text" id="aa" value="1000" style="text-align:left"></div></div>
+ <div class="row"><div class="t">Số lượng (xu / vật phẩm / phút / level)<input type="text" id="aa" value="1000" style="text-align:left"></div></div>
  <div class="row"><div class="t">Vật phẩm<br><select id="ai">${opts}</select></div></div>
  <div class="row"><div class="t">Tiêu đề thư<input type="text" id="ah" maxlength="60" style="text-align:left"></div></div>
  <div class="row"><div class="t">Nội dung thư / thông báo<input type="text" id="am" maxlength="200" style="text-align:left"></div></div>
  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">${bt('🪙 Cộng/trừ xu',"adm('coins')",'mint')}${bt('🎁 Tặng vật phẩm',"adm('item')",'mint')}${bt('✉️ Gửi thư',"adm('mail')",'mint')}${bt('ℹ️ Thông tin',"adm('info')")}${bt('🔇 Cấm chat (phút)',"adm('mute')")}${bt('🚪 Kick',"adm('kick')")}${bt('⛔ Ban',"adm('ban')",'pink')}${bt('✅ Unban',"adm('unban')")}${bt('📢 Thông báo toàn server',"adm('announce')",'pink')}</div>`+
  (ROLE=='owner'?`<div class="row"><div class="t">👑 Cấp quyền (chỉ Owner)<br><select id="ar"><option value="player">Người chơi</option><option value="vip">VIP 💎</option><option value="mod">MOD 🔧</option><option value="admin">ADMIN 🛡️</option><option value="owner">OWNER 👑</option></select></div>${bt('Đặt role',"adm('setrole')",'pink')}</div>`:'')+
  ((ROLE=='admin'||ROLE=='owner')?`<div class="row"><div class="t">🌸 15 danh hiệu dễ thương (chỉ Admin cấp)<br><select id="ati"><option value="">-- gỡ --</option>${Object.entries(CFG.titles||{}).map(([id,t])=>'<option value="'+id+'">'+t.e+' '+t.n+'</option>').join('')}</select></div>${bt('Cấp danh hiệu',"adm('settitle')",'pink')}</div>`:'')+
+ ((ROLE=='admin'||ROLE=='owner')?`<div class="row"><div class="t">⬆️ Cấp Level (đặt lại) hoặc Tặng Level<br><small>Nhập Level vào ô "Số lượng" ở trên. Cấp Level = đặt lại, Tặng Level = cộng thêm.</small></div>${bt('⬆️ Cấp Level (đặt lại)',"adm('setlevel')",'pink')} ${bt('🎁 Tặng Level (cộng thêm)',"adm('addlevel')",'mint')}</div>`:'')+
  `<b>Đang online</b>`+(onl.map(o=>row('🧑',rTag(o.role)+esc(o.name),'Mã '+o.id,bt('Chọn',`$('#at').value='${o.id}'`))).join('')||'<p style="font-size:13px">Không có ai.</p>'))}
 function adm(cmd){const g=id=>{const e=$(id);return e?e.value.trim():''};NET.send({t:'adm',cmd,args:{target:g('#at'),amount:parseInt(g('#aa'))||0,minutes:parseInt(g('#aa'))||0,item:g('#ai'),title:cmd=='settitle'?g('#ati'):g('#ah'),text:g('#am'),role:g('#ar')}})}
 /* --- joystick điện thoại --- */
