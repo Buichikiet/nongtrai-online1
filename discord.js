@@ -20,7 +20,7 @@ module.exports = function start(ctx) {
 
   let setup = { guildId: '', channels: {}, roles: {}, cats: {} };
   try { setup = Object.assign(setup, JSON.parse(fs.readFileSync(SETUP_F, 'utf8'))); } catch (e) { /* mới */ }
-  if (ctx.initialSetup) setup = Object.assign(setup, ctx.initialSetup); // bản lưu trên MongoDB (Render xóa file mỗi lần deploy)
+  if (ctx.initialSetup) setup = Object.assign(setup, ctx.initialSetup);
   const saveSetup = () => {
     try { fs.writeFileSync(SETUP_F, JSON.stringify(setup, null, 2)); } catch (e) { /* bỏ */ }
     if (ctx.saveSetup) ctx.saveSetup(setup);
@@ -91,7 +91,7 @@ module.exports = function start(ctx) {
       if (E.DISCORD_ADMIN_ROLE_ID && roles.has(E.DISCORD_ADMIN_ROLE_ID)) up('admin');
       if (E.DISCORD_MOD_ROLE_ID && roles.has(E.DISCORD_MOD_ROLE_ID)) up('mod');
     }
-    up(ctx.roleOfDiscord(i.user.id));
+    try { up(ctx.roleOfDiscord(i.user.id)); } catch (e) { /* bỏ */ }
     return r;
   }
   const need = (i, lv) => (LV[actorRole(i)] || 0) >= lv;
@@ -253,19 +253,24 @@ module.exports = function start(ctx) {
   }
 
   async function doCheckin(i, ma) {
-    const r = ctx.checkinByCode(ma, i.user.id);
+    const r = ctx.checkinByCode ? ctx.checkinByCode(ma, i.user.id) : { ok:false, msg:'Chưa hỗ trợ' };
     return (r.ok ? '✅ ' : '❌ ') + r.msg;
   }
 
+  // ====== SỰ KIỆN ======
   client.once(Events.ClientReady, async c => {
+    console.log('════════════════════════════════════════');
     console.log('🤖 Bot Discord đã online:', c.user.tag);
+    console.log('📋 Số guild:', c.guilds.cache.size);
+    console.log('📋 Guild IDs:', c.guilds.cache.map(g => g.id).join(', '));
+    console.log('════════════════════════════════════════');
     try {
       const rest = new REST({ version: '10' }).setToken(E.DISCORD_TOKEN);
       const gid = E.DISCORD_GUILD_ID || setup.guildId;
       const route = gid ? Routes.applicationGuildCommands(c.user.id, gid) : Routes.applicationCommands(c.user.id);
       await rest.put(route, { body: defs });
-      console.log('✅ Đã đăng ký', defs.length, 'lệnh slash');
-    } catch (e) { console.error('Lỗi đăng ký lệnh:', e.message); }
+      console.log('✅ Đã đăng ký', defs.length, 'lệnh slash tại', gid ? 'guild ' + gid : 'global');
+    } catch (e) { console.error('❌ Lỗi đăng ký lệnh:', e.message); }
   });
 
   client.on(Events.GuildMemberAdd, async m => {
@@ -277,7 +282,13 @@ module.exports = function start(ctx) {
   });
 
   client.on(Events.InteractionCreate, async i => {
+    console.log('📥 Interaction:', i.type, i.commandName || i.customId || 'unknown', '| user:', i.user?.username, '| guild:', i.guild?.name);
     try {
+      // Defer reply NGAY để tránh timeout 3s
+      if (!i.isButton() && !i.isModalSubmit() && !i.deferred && !i.replied && i.isChatInputCommand()) {
+        try { await i.deferReply({ ephemeral: true }); } catch (e) { /* bỏ */ }
+      }
+
       if (i.isButton()) {
         if (i.customId === 'ticket_open') return openTicket(i);
         if (i.customId === 'ticket_claim') {
@@ -305,7 +316,7 @@ module.exports = function start(ctx) {
         }
       }
       if (i.isModalSubmit() && i.customId === 'checkin_form') {
-        await i.deferReply({ ephemeral: true });
+        if (!i.deferred && !i.replied) await i.deferReply({ ephemeral: true });
         const msg = await doCheckin(i, i.fields.getTextInputValue('ma'));
         return i.editReply(msg);
       }
@@ -313,9 +324,8 @@ module.exports = function start(ctx) {
       const n = i.commandName, g = k => i.options.get(k) && i.options.get(k).value;
       if (n === 'setup') {
         if (!need(i, 4) && !i.memberPermissions.has(PermissionFlagsBits.Administrator)) {
-          return i.reply({ content: '❌ Chỉ Owner/Admin server dùng /setup', ephemeral: true });
+          return i.editReply({ content: '❌ Chỉ Owner/Admin server dùng /setup' });
         }
-        await i.deferReply({ ephemeral: true });
         const sub = i.options.getSubcommand();
         if (sub === 'role') { await setupRoles(i.guild); return i.editReply('✅ Đã setup role (quyền + 15 role dễ thương). Dùng `/caprole` để cấp — chỉ admin.'); }
         if (sub === 'ticket') {
@@ -326,7 +336,6 @@ module.exports = function start(ctx) {
         await setupAll(i.guild);
         return i.editReply('✅ **Setup all xong!** Đã tạo role, kênh thông báo, điểm danh, hướng dẫn, tải game, ủng hộ, ticket, báo cáo, log đăng nhập.');
       }
-      await i.deferReply({ ephemeral: true });
       const actor = { role: actorRole(i), label: 'Discord:' + i.user.username };
       let msg;
       if (n === 'lock') {
@@ -373,12 +382,12 @@ module.exports = function start(ctx) {
           else {
             const mem = await i.guild.members.fetch(user.id);
             await mem.roles.add(rid, 'Admin cấp role dễ thương');
-            const linked = ctx.setTitleByDiscord(user.id, tid);
-            msg = `✅ Đã cấp ${t.e} **${t.n}** cho ${user.username}` + (linked ? ' (đã đồng bộ vào game)' : ' (chưa liên kết game — vào game sẽ hiện khi admin /danhhieu)');
+            const linked = ctx.setTitleByDiscord ? ctx.setTitleByDiscord(user.id, tid) : null;
+            msg = `✅ Đã cấp ${t.e} **${t.n}** cho ${user.username}` + (linked ? ' (đã đồng bộ vào game)' : ' (chưa liên kết game)');
           }
         }
       } else if (n === 'lienket') {
-        const u = ctx.linkDiscord(g('ma'), i.user.id);
+        const u = ctx.linkDiscord ? ctx.linkDiscord(g('ma'), i.user.id) : null;
         if (u && setup.roles.member) {
           try { await i.member.roles.add(setup.roles.member); } catch (e) { /* */ }
           if (u.role === 'vip' && setup.roles.vip) try { await i.member.roles.add(setup.roles.vip); } catch (e) { /* */ }
@@ -388,7 +397,7 @@ module.exports = function start(ctx) {
         msg = '📖 Đọc kênh hướng dẫn trong server, hoặc mở `/huong-dan.html` trên web game.\nDiscord: ' + INVITE;
       } else if (n === 'online') {
         const o = ctx.online();
-        msg = `🟢 Online **${o.length}**\n` + o.slice(0, 25).map(p => `• ${p.name} [${p.code}] Lv.${p.lv}`).join('\n');
+        msg = `🟢 Online **${o.length}**\n` + (o.slice(0, 25).map(p => `• ${p.name} [${p.code}] Lv.${p.lv}`).join('\n') || '(không có ai)');
       } else if (n === 'top') {
         msg = '🏆 **Top**\n' + ctx.top(10).map((p, k) => `${k + 1}. ${p.name} — Lv.${p.lv} — ${p.coins.toLocaleString('vi')} xu`).join('\n');
       } else {
@@ -403,12 +412,16 @@ module.exports = function start(ctx) {
           thongbao: ['announce', { text: g('noidung') }],
           thongtin: ['info', { target: g('ma') }]
         }[n];
-        const r = ctx.adminDo(actor, map[0], map[1]);
-        msg = (r.ok ? '✅ ' : '❌ ') + r.msg;
+        if (!map) { msg = '❌ Lệnh không hỗ trợ'; }
+        else {
+          const r = ctx.adminDo(actor, map[0], map[1]);
+          msg = (r.ok ? '✅ ' : '❌ ') + r.msg;
+        }
       }
-      await i.editReply({ content: msg || 'OK', allowedMentions: { parse: [] } });
+      if (i.deferred || i.replied) await i.editReply({ content: msg || 'OK', allowedMentions: { parse: [] } });
+      else await i.reply({ content: msg || 'OK', ephemeral: true, allowedMentions: { parse: [] } });
     } catch (e) {
-      console.error(e);
+      console.error('❌ Lỗi xử lý interaction:', e);
       try { if (i.deferred || i.replied) await i.editReply('❌ Lỗi: ' + e.message); else await i.reply({ content: '❌ ' + e.message, ephemeral: true }); } catch (x) { /* */ }
     }
   });
@@ -419,6 +432,7 @@ module.exports = function start(ctx) {
     if (!ch || m.author.bot || m.channelId !== ch || !m.content) return;
     ctx.chatFromDiscord((m.member && m.member.displayName) || m.author.username, m.content);
   });
+
   const post = async (id, text, extra) => {
     if (!id) return;
     try {
@@ -434,10 +448,26 @@ module.exports = function start(ctx) {
   });
   ctx.getSetup = () => setup;
 
+  // ====== LOGIN BOT ======
   client.on(Events.Error, e => console.error('🤖 Discord client error:', e.message));
   client.on(Events.Warn, w => console.warn('🤖 Discord warn:', w));
   client.on(Events.ShardError, e => console.error('🤖 Discord shard error:', e.message));
   client.on(Events.ShardDisconnect, (ev, id) => console.warn('🤖 Shard', id, 'mất kết nối, code', ev && ev.code));
+
+  console.log('════════════════════════════════════════');
   console.log('🤖 Đang đăng nhập bot Discord...');
-  client.login(E.DISCORD_TOKEN).catch(e => console.error('❌ Bot Discord KHÔNG đăng nhập được:', e.message));
+  console.log('🔑 Token dài:', E.DISCORD_TOKEN ? E.DISCORD_TOKEN.length : 0, 'ký tự');
+  console.log('════════════════════════════════════════');
+
+  client.login(E.DISCORD_TOKEN)
+    .then(() => console.log('✅ Bot Discord login thành công!'))
+    .catch(e => {
+      console.error('❌ Bot Discord KHÔNG đăng nhập được:', e.message);
+      if (e.message.includes('disallowed intents')) {
+        console.error('👉 Bật Message Content Intent + Server Members Intent tại https://discord.com/developers/applications');
+      }
+      if (e.message.includes('TokenInvalid')) {
+        console.error('👉 Token sai — Reset Token trong Developer Portal → Bot');
+      }
+    });
 };
