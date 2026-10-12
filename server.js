@@ -435,8 +435,8 @@ async function discordPreflight() {
     }
     const a = await r.json();
     const f = a.flags || 0;
-    ctx.privileged.members = !!((f & (1 << 14)) || (f & (1 << 15)));
-    ctx.privileged.content = !!((f & (1 << 18)) || (f & (1 << 19)));
+    ctx.privileged.members = !!(f & (1 << 14) || f & (1 << 15));
+    ctx.privileged.content = !!(f & (1 << 18) || f & (1 << 19));
     if (!ctx.privileged.members) console.warn('⚠️ Chưa bật SERVER MEMBERS INTENT');
     if (!ctx.privileged.content) console.warn('⚠️ Chưa bật MESSAGE CONTENT INTENT');
   } catch (e) {
