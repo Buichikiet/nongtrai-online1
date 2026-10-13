@@ -414,6 +414,7 @@ srv(m){switch(m.t){
  case'announce':toast('📢 '+m.text);addChat('Thông báo',m.text,false,0,'owner',true);break;
  case'adm_res':toast(m.msg);if(curPanel===openFriends)openFriends();break;
  case'link_code':panel('🎮 Mã thành viên / Discord','<p>Copy mã rồi điểm danh <b>/diemdanh</b> hoặc <b>/lienket</b> trên Discord.</p><div class="row"><div class="t"><b style="font-size:22px">'+m.code+'</b><small>Server: '+(CFG.invite||'https://discord.gg/TZRfuhbqJA')+'</small></div>'+bt('Copy',"navigator.clipboard.writeText('"+m.code+"');toast('Đã copy')",'mint')+'</div>');break;
+ case'update_level':{const lv=Math.max(1,Math.min(99,+m.lv||1));if(S&&lv!==S.lv){const up=lv>S.lv;S.lv=lv;S.xp=0;hudUpdate();toast((up?'🎉 Bạn được nâng lên Lv.':'Level của bạn là Lv.')+lv+(up?'!':''));save()}break}
  case'kick':this.online=false;alert(m.reason||'Bạn đã bị đưa ra khỏi game');logout();break;
 }}};
 /* ===== MAP ===== */
@@ -1365,7 +1366,7 @@ function drawHouse(c,lv){const x0=HOUSEPOS.x*TS,y0=HOUSEPOS.y*TS,w=HOUSEPOS.w*TS
  if(fl==2){c.fillStyle='#bfe9ff';[[x0+26,y0+h-86],[x0+w/2-10,y0+h-86],[x0+w-46,y0+h-86]].forEach(([wx,wy])=>{rr(c,wx,wy,20,18,4);c.fill()})}
  emo(c,'🌷',x0+10,y0+h-6,18);emo(c,'🌼',x0+w-10,y0+h-6,18)}
 function render(){
- const cv=$('#g'),c=cv.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);
+ const cv=$('#g'),c=cv.getContext('2d'),dpr=Math.min(window.DPRCAP||1.5,window.devicePixelRatio||1);
  if(cv.width!=innerWidth*dpr||cv.height!=innerHeight*dpr){cv.width=innerWidth*dpr;cv.height=innerHeight*dpr}
  const z=Math.max(.8,Math.min(1.5,innerWidth/900))*dpr,W=cv.width/z,H=cv.height/z;
  c.setTransform(z,0,0,z,0,0);
@@ -1461,7 +1462,7 @@ function render(){
    c.setLineDash([]);c.fillStyle='#d9dde4';c.fillRect(x*TS,y*TS,TS,3);c.fillRect(x*TS,y*TS+TS-3,TS,3)}
   if(inFarm(x,y)&&!water[i]){const pl=M.plots[x+','+y];c.fillStyle=pl?(pl.s==1&&pl.w>0?'#7a4a24':'#a8703c'):'rgba(90,160,70,.25)';rr(c,x*TS+2,y*TS+2,TS-4,TS-4,7);c.fill();if(pl){c.fillStyle='rgba(0,0,0,.12)';c.fillRect(x*TS+6,y*TS+TS/2,TS-12,2)}}}
  // ===== CẦU BẮC QUA HỒ =====
- for(let x=0;x<MW;x++)for(let y=0;y<MH;y++){
+ for(let x=x1;x<=x2;x++)for(let y=y1;y<=y2;y++){
   if(!water[y*MW+x])continue;
    // tìm hướng có đất bên cạnh
   const leftW=water[y*MW+(x-1)],rightW=water[y*MW+(x+1)];
@@ -1758,7 +1759,10 @@ function startGame(){
  setInterval(()=>{save();if(document.querySelector('#mm'))drawMini()},4000);
  for(const k of Object.keys(others))delete others[k];
  let last=performance.now();
- (function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);render();requestAnimationFrame(loop)})(last)}
+ window.DPRCAP=1.5;let _fa=0,_fn=0,_ft=performance.now();
+ (function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);render();
+  _fa+=n-_ft;_ft=n;_fn++;if(_fn>=90){const avg=_fa/_fn;if(avg>28&&window.DPRCAP>.75)window.DPRCAP=Math.max(.75,window.DPRCAP-.25);_fa=0;_fn=0}
+  requestAnimationFrame(loop)})(last)}
 /* ===== INPUT ===== */
 $('#g').addEventListener('pointerdown',e=>{if(!S)return;AU.start();onTap(e.clientX/cam.z+cam.x,e.clientY/cam.z+cam.y)});
 addEventListener('keydown',e=>{if(e.target.tagName=='INPUT')return;keys[e.key]=true;keys[e.key.toLowerCase()]=true;if(e.key===' '||e.code==='Space'){e.preventDefault();updateFishing(true)}});
