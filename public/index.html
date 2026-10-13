@@ -2418,7 +2418,7 @@ function openCostume() {
     ${sizeHtml}
     <hr>
     <h3 style="margin:6px 0 4px;color:#ff6b6b">👗 Trang phục đặc biệt</h3>
-    ${fs.map(f => `<div class="row"><div class="e">${f.n.split(' ')[0]}</div><div class="t"><b>${f.n}</b><small>🪙 ${f.price}</small></div>${bt('Mua', `buyCostume('${f.id}',${f.price})`, 'pink')}</div>`).join('')}`, openCostume;
+    ${fs.map(f => `<div class="row"><div class="e">${f.n.split(' ')[0]}</div><div class="t"><b>${f.n}</b><small>🪙 ${f.price}</small></div>${bt('Mua', `buyCostume('${f.id}',${f.price})`, 'pink')}</div>`).join('')}`;
   panel('👗 Trang phục', html, openCostume);
 }
 function setSize(v) {
